@@ -1,13 +1,17 @@
 from __future__ import annotations
 from pathlib import Path
 from datetime import datetime
-import json, traceback, shutil, threading, hashlib, zipfile
+import json, traceback, shutil, threading, hashlib, re
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 from .db import SessionLocal
 from .models import Job, StoredFile
 from .storage import storage
 from .config import settings
-from . import table_ops
+from .toolkit_ops import run_operation
+from concurrent.futures import ThreadPoolExecutor
+
+executor=ThreadPoolExecutor(max_workers=2, thread_name_prefix="dbflow")
 
 def _log(job: Job, msg: str):
     job.log_text = (job.log_text or "") + f"[{datetime.utcnow().isoformat(timespec='seconds')}] {msg}\n"
@@ -39,7 +43,7 @@ def _save_output(db: Session, job: Job, owner_id: int, path: Path, kind="result"
     return rec
 
 def enqueue(job_id: int):
-    threading.Thread(target=run_job, args=(job_id,), daemon=True).start()
+    executor.submit(run_job, job_id)
 
 def cleanup_quick_job(job_id: int, work: Path):
     db = SessionLocal()
@@ -49,7 +53,7 @@ def cleanup_quick_job(job_id: int, work: Path):
         if job:
             options = json.loads(job.options_json or "{}")
             session_id = options.get("quick_session")
-            if session_id:
+            if session_id and re.fullmatch(r"[a-f0-9]{24}",session_id):
                 session_dir = Path(settings.work_path) / f"quick_{session_id}"
             ids = json.loads(job.input_file_ids or "[]") + json.loads(job.output_file_ids or "[]")
             for fid in set(ids):
@@ -63,6 +67,33 @@ def cleanup_quick_job(job_id: int, work: Path):
         shutil.rmtree(work, ignore_errors=True)
         if session_dir:
             shutil.rmtree(session_dir, ignore_errors=True)
+
+def schedule_cleanup(job_id: int, work: Path, delay: float):
+    timer = threading.Timer(max(0,delay), cleanup_quick_job, args=(job_id, work))
+    timer.daemon = True
+    timer.start()
+
+def restore_cleanup():
+    """Restore expiry after Railway restarts; do not leave interrupted jobs running."""
+    db=SessionLocal()
+    pending=[]
+    try:
+        for job in db.scalars(select(Job)).all():
+            options=json.loads(job.options_json or "{}")
+            if options.get("mode")!="quick": continue
+            ids=json.loads(job.input_file_ids or "[]")+json.loads(job.output_file_ids or "[]")
+            if not any((rec:=db.get(StoredFile,fid)) and not rec.deleted for fid in ids): continue
+            if job.status in ("queued","running"):
+                job.status="error"; job.error="Обработка прервана перезапуском сервера. Запусти задачу заново."
+                job.finished_at=datetime.utcnow()
+            age=(datetime.utcnow()-(job.finished_at or job.created_at)).total_seconds()
+            pending.append((job.id,Path(settings.work_path)/f"job_{job.id}",settings.quick_job_ttl_seconds-age))
+        db.commit()
+    finally:
+        db.close()
+    for job_id,work,delay in pending:
+        if delay<=0: cleanup_quick_job(job_id,work)
+        else: schedule_cleanup(job_id,work,delay)
 
 def run_job(job_id: int):
     db = SessionLocal()
@@ -80,7 +111,7 @@ def run_job(job_id: int):
             rec=db.get(StoredFile,fid)
             if not rec or rec.owner_id!=job.owner_id or rec.deleted:
                 raise ValueError(f"Input file {fid} missing")
-            local=work/f"{fid}_{rec.name}"
+            local=work/"inputs"/str(fid)/rec.name
             storage.open_local_copy(rec.storage_key, local)
             local_paths.append(local)
             job.progress=min(20, 2+int(idx/max(1,len(input_ids))*18)); db.commit()
@@ -88,86 +119,17 @@ def run_job(job_id: int):
         opts=job_options
         op=job.operation
 
-        if op=="convert_csv":
-            for i,p in enumerate(local_paths,1):
-                df=table_ops.read_any(p)
-                out=work/(p.stem+".csv")
-                table_ops.write_csv(df,out)
-                _save_output(db,job,job.owner_id,out)
-                job.progress=20+int(i/max(1,len(local_paths))*75); db.commit()
+        def progress(value):
+            job.progress=value
+            db.commit()
 
-        elif op=="normalize":
-            for i,p in enumerate(local_paths,1):
-                df=table_ops.normalize(table_ops.read_any(p))
-                out=work/(p.stem+"_normalized.csv")
-                df.write_csv(out); _save_output(db,job,job.owner_id,out)
-                job.progress=20+int(i/max(1,len(local_paths))*75); db.commit()
-
-        elif op=="clean":
-            for i,p in enumerate(local_paths,1):
-                df=table_ops.clean(table_ops.read_any(p))
-                out=work/(p.stem+"_clean.csv")
-                df.write_csv(out); _save_output(db,job,job.owner_id,out)
-                job.progress=20+int(i/max(1,len(local_paths))*75); db.commit()
-
-        elif op=="remove7":
-            for i,p in enumerate(local_paths,1):
-                df=table_ops.remove_leading_7(table_ops.read_any(p))
-                out=work/(p.stem+"_minus7.csv")
-                df.write_csv(out); _save_output(db,job,job.owner_id,out)
-                job.progress=20+int(i/max(1,len(local_paths))*75); db.commit()
-
-        elif op=="dedupe":
-            keys=opts.get("keys") or None
-            for i,p in enumerate(local_paths,1):
-                df=table_ops.dedupe(table_ops.read_any(p),keys)
-                out=work/(p.stem+"_dedup.csv")
-                df.write_csv(out); _save_output(db,job,job.owner_id,out)
-                job.progress=20+int(i/max(1,len(local_paths))*75); db.commit()
-
-        elif op=="filter":
-            column=opts.get("column","")
-            value=opts.get("value","")
-            contains=bool(opts.get("contains",False))
-            for i,p in enumerate(local_paths,1):
-                df=table_ops.filter_rows(table_ops.read_any(p),column,value,contains)
-                out=work/(p.stem+"_filtered.csv")
-                df.write_csv(out); _save_output(db,job,job.owner_id,out)
-                job.progress=20+int(i/max(1,len(local_paths))*75); db.commit()
-
-        elif op=="sort":
-            column=opts.get("column","")
-            descending=bool(opts.get("descending",False))
-            for i,p in enumerate(local_paths,1):
-                df=table_ops.sort_rows(table_ops.read_any(p),column,descending)
-                out=work/(p.stem+"_sorted.csv")
-                df.write_csv(out); _save_output(db,job,job.owner_id,out)
-                job.progress=20+int(i/max(1,len(local_paths))*75); db.commit()
-
-        elif op=="merge":
-            df=table_ops.merge(local_paths)
-            out=work/"merged.csv"; df.write_csv(out)
-            _save_output(db,job,job.owner_id,out); job.progress=95; db.commit()
-
-        elif op=="split":
-            if len(local_paths)!=1: raise ValueError("Split accepts one file")
-            df=table_ops.read_any(local_paths[0])
-            max_rows=max(1000,int(opts.get("max_rows",500000)))
-            parts=table_ops.split_csv(df,work/"parts",max_rows)
-            zip_path=work/"split.zip"
-            with zipfile.ZipFile(zip_path,"w",compression=zipfile.ZIP_DEFLATED,allowZip64=True) as z:
-                for p in parts: z.write(p,p.name)
-            _save_output(db,job,job.owner_id,zip_path); job.progress=95; db.commit()
-
-        elif op=="stats":
-            data=[]
-            for p in local_paths:
-                data.append({"file":p.name,**table_ops.basic_stats(table_ops.read_any(p))})
-            out=work/"stats.json"; out.write_text(json.dumps(data,ensure_ascii=False,indent=2),encoding="utf-8")
-            _save_output(db,job,job.owner_id,out); job.progress=95; db.commit()
-
-        else:
-            raise ValueError("Unknown operation")
+        reference_ids=set(job_options.get("reference_ids", []))
+        source_paths=[path for path, fid in zip(local_paths,input_ids) if fid not in reference_ids]
+        reference_paths=[path for path, fid in zip(local_paths,input_ids) if fid in reference_ids]
+        outputs=run_operation(op,source_paths,reference_paths,opts,work,progress)
+        for output in outputs:
+            _save_output(db,job,job.owner_id,output)
+        _log(job,f"Результатов: {len(outputs)}")
 
         job.status="done"; job.progress=100; job.finished_at=datetime.utcnow(); _log(job,"completed"); db.commit()
     except Exception as e:
@@ -180,9 +142,7 @@ def run_job(job_id: int):
             pass
     finally:
         if job_options.get("mode") == "quick":
-            timer = threading.Timer(settings.quick_job_ttl_seconds, cleanup_quick_job, args=(job_id, work))
-            timer.daemon = True
-            timer.start()
+            schedule_cleanup(job_id,work,settings.quick_job_ttl_seconds)
         else:
             shutil.rmtree(work, ignore_errors=True)
         db.close()

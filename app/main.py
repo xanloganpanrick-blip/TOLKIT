@@ -1,4 +1,5 @@
 from pathlib import Path
+from contextlib import asynccontextmanager
 import hashlib, json, os, re, shutil
 
 from fastapi import FastAPI, Depends, Header, HTTPException, UploadFile, File, Form
@@ -11,18 +12,21 @@ from .db import Base, engine, get_db
 from .models import User, StoredFile, Job
 from .storage import storage
 from .config import settings
-from .jobs import enqueue
+from .jobs import enqueue, restore_cleanup
+from .toolkit_ops import OPERATIONS
 
 Base.metadata.create_all(bind=engine)
 Path(settings.work_path).mkdir(parents=True, exist_ok=True)
 
-app = FastAPI(title="DBFLOW Local", version="2.0.0")
+@asynccontextmanager
+async def lifespan(app):
+    restore_cleanup()
+    yield
+
+app = FastAPI(title="DBFLOW", version="4.0.0", lifespan=lifespan)
 static_dir = Path(__file__).parent / "static"
-ALLOWED_EXTENSIONS = {".csv", ".xlsx", ".xlsm", ".parquet"}
-ALLOWED_OPERATIONS = {
-    "convert_csv", "clean", "normalize", "remove7", "dedupe",
-    "merge", "split", "filter", "sort", "stats",
-}
+ALLOWED_EXTENSIONS = {".csv", ".xlsx", ".xlsm", ".xls", ".xlsb", ".parquet", ".txt", ".html", ".htm"}
+ALLOWED_OPERATIONS = OPERATIONS
 SESSION_RE = re.compile(r"^[A-Za-z0-9_-]{8,128}$")
 
 
@@ -50,10 +54,11 @@ def health():
 
 
 def _upload_name(upload: UploadFile) -> tuple[str, str]:
-    display_name = Path(upload.filename or "upload.bin").name
+    display_name = re.split(r"[/\\]", upload.filename or "upload.bin")[-1]
+    display_name = re.sub(r"[\x00-\x1f]", "_", display_name)
     suffix = Path(display_name).suffix.lower()
     if suffix not in ALLOWED_EXTENSIONS:
-        raise HTTPException(415, "Поддерживаются только CSV, XLSX, XLSM и Parquet")
+        raise HTTPException(415, "Поддерживаются CSV, Excel, Parquet, TXT и HTML")
     return display_name, suffix
 
 
@@ -79,6 +84,7 @@ async def create_quick_job(
     operation: str = Form(...),
     options_json: str = Form("{}"),
     files: list[UploadFile] = File(...),
+    references: list[UploadFile] = File(default=[]),
     u: User = Depends(current_local_user),
     db: Session = Depends(get_db),
 ):
@@ -90,13 +96,16 @@ async def create_quick_job(
         raise HTTPException(400, "Invalid options")
     if not isinstance(options, dict) or not files:
         raise HTTPException(400, "Choose at least one file")
+    names=[_upload_name(upload)[0].casefold() for upload in files]
+    if len(set(names))!=len(names):
+        raise HTTPException(400,"У исходных файлов одинаковые имена. Переименуй один из них.")
 
     session_id = hashlib.sha256(os.urandom(24)).hexdigest()[:24]
     session_dir = Path(settings.work_path) / f"quick_{session_id}"
     session_dir.mkdir(parents=True, exist_ok=True)
     records: list[StoredFile] = []
     try:
-        for index, upload in enumerate(files):
+        for index, upload in enumerate([*files,*references]):
             display_name, suffix = _upload_name(upload)
             path = session_dir / f"{index:04d}_{display_name}"
             total, sha = await _write_upload(upload, path)
@@ -117,7 +126,8 @@ async def create_quick_job(
         options.update({
             "mode": "quick",
             "quick_session": session_id,
-            "source_names": [record.name for record in records],
+            "source_names": [record.name for record in records[:len(files)]],
+            "reference_ids": [record.id for record in records[len(files):]],
         })
         job = Job(
             owner_id=u.id,
@@ -143,7 +153,7 @@ async def create_quick_job(
 
 def _download_path(record: StoredFile) -> Path:
     local_path = storage.local_path(record.storage_key)
-    if local_path and local_path.exists():
+    if local_path:
         return local_path
     target = Path(settings.work_path) / f"download_{record.id}_{record.name}"
     storage.open_local_copy(record.storage_key, target)
@@ -161,7 +171,19 @@ def download_result(
         raise HTTPException(404, "Result expired")
     if record.kind != "temporary":
         raise HTTPException(404, "Result expired")
-    return FileResponse(_download_path(record), filename=record.name, media_type=record.mime)
+    path=_download_path(record)
+    if not path.exists(): raise HTTPException(404, "Результат больше недоступен")
+    return FileResponse(path, filename=record.name, media_type=record.mime)
+
+
+def output_records(job, db):
+    result=[]
+    for fid in json.loads(job.output_file_ids or "[]"):
+        record=db.get(StoredFile,fid)
+        if record:
+            result.append({"id":record.id,"name":record.name,"size":record.size,
+                           "expired":record.deleted or not bool(storage.local_path(record.storage_key) and storage.local_path(record.storage_key).exists())})
+    return result
 
 
 @app.get("/api/jobs")
@@ -178,6 +200,7 @@ def list_jobs(u: User = Depends(current_local_user), db: Session = Depends(get_d
             "source_names": json.loads(job.options_json or "{}").get("source_names", []),
             "input_file_ids": json.loads(job.input_file_ids or "[]"),
             "output_file_ids": json.loads(job.output_file_ids or "[]"),
+            "outputs": output_records(job,db),
             "created_at": job.created_at,
             "finished_at": job.finished_at,
             "error": job.error,
@@ -200,6 +223,7 @@ def get_job(jid: int, u: User = Depends(current_local_user), db: Session = Depen
         "source_names": options.get("source_names", []),
         "input_file_ids": json.loads(job.input_file_ids or "[]"),
         "output_file_ids": json.loads(job.output_file_ids or "[]"),
+        "outputs": output_records(job,db),
         "log": job.log_text,
         "error": job.error,
         "created_at": job.created_at,

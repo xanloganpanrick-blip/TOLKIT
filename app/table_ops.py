@@ -1,7 +1,9 @@
 from __future__ import annotations
 from pathlib import Path
 from typing import Iterable
-import csv, re, zipfile, shutil
+import csv, re, io
+from itertools import islice, chain
+from html.parser import HTMLParser
 import polars as pl
 
 PHONE_ALIASES = {"номер","телефон","phone","mobile","мобильный","тел","phone_number"}
@@ -13,48 +15,126 @@ def _norm_header(x: str) -> str:
 
 def _find_col(cols: list[str], aliases: set[str]) -> str | None:
     norm = {_norm_header(c): c for c in cols}
-    for a in aliases:
+    for a in sorted(aliases, key=len, reverse=True):
         if a in norm:
             return norm[a]
     for c in cols:
         n = _norm_header(c)
-        if any(a in n for a in aliases):
+        if any(len(a) > 2 and a in n for a in aliases):
             return c
     return None
 
-def read_any(path: Path) -> pl.DataFrame:
+def _headers(values):
+    seen = set()
+    result = []
+    for i, value in enumerate(values):
+        base = str(value).strip() if value is not None else ""
+        base = base or f"col_{i+1}"
+        name, suffix = base, 2
+        while name in seen:
+            name = f"{base}_{suffix}"; suffix += 1
+        result.append(name); seen.add(name)
+    return result
+
+def _from_rows(rows, search_header=False):
+    rows = iter(rows)
+    if search_header:
+        leading=list(islice(rows,20))
+        start=next((i for i,row in enumerate(leading)
+                    if any(_norm_header(value) in PHONE_ALIASES for value in row)),0)
+        rows=chain(leading[start:],rows)
+    first = next(rows, [])
+    headers = _headers(first)
+    if not headers:
+        return pl.DataFrame()
+    # Treat identifiers as text: leading zeros and large IDs must survive import.
+    data = [[None if value is None else str(value) for value in list(row)[:len(headers)]]
+            for row in rows if any(value is not None and str(value).strip() for value in row)]
+    data = [row + [None] * (len(headers) - len(row)) for row in data]
+    return pl.DataFrame(data, schema={name: pl.String for name in headers}, orient="row")
+
+def decode_text(path: Path):
+    raw = path.read_bytes()
+    for encoding in ("utf-8-sig", "utf-16" if raw.startswith((b"\xff\xfe", b"\xfe\xff")) else "utf-8", "cp1251"):
+        try:
+            return raw.decode(encoding)
+        except UnicodeDecodeError:
+            continue
+    raise ValueError("Не удалось определить кодировку текста")
+
+class _HTMLTables(HTMLParser):
+    def __init__(self):
+        super().__init__(); self.tables=[]; self.depth=0; self.rows=[]; self.row=None; self.cell=None
+    def handle_starttag(self, tag, attrs):
+        if tag == "table":
+            self.depth += 1
+            if self.depth == 1: self.rows=[]
+        if self.depth == 1:
+            if tag == "tr": self.row=[]
+            if tag in ("td", "th"): self.cell=[]
+            if tag == "br" and self.cell is not None: self.cell.append(" ")
+    def handle_data(self, data):
+        if self.cell is not None: self.cell.append(data)
+    def handle_endtag(self, tag):
+        if self.depth == 1:
+            if tag in ("td", "th") and self.cell is not None:
+                if self.row is not None: self.row.append("".join(self.cell).strip())
+                self.cell=None
+            if tag == "tr" and self.row is not None:
+                self.rows.append(self.row); self.row=None
+            if tag == "table": self.tables.append(self.rows)
+        if tag == "table": self.depth=max(0,self.depth-1)
+
+def read_tables(path: Path, first_sheet=False, search_header=False) -> list[tuple[str, pl.DataFrame]]:
     ext = path.suffix.lower()
     if ext == ".csv":
-        # infer_separator is handled by trying common delimiters
-        last = None
-        for sep in [",",";","\t","|"]:
-            try:
-                df = pl.read_csv(path, separator=sep, infer_schema_length=10000, ignore_errors=True, try_parse_dates=False)
-                if df.width > 1 or sep == ",":
-                    return df
-            except Exception as e:
-                last = e
-        raise last or ValueError("Cannot parse CSV")
+        with path.open("rb") as stream: sample=stream.read(65536)
+        try: sample_text=sample.decode("utf-8-sig")
+        except UnicodeDecodeError: sample_text=sample.decode("cp1251")
+        try: sep=csv.Sniffer().sniff(sample_text, delimiters=",;\t|").delimiter
+        except csv.Error: sep=","
+        try:
+            frame=pl.read_csv(path, separator=sep, infer_schema=False, encoding="utf8",
+                              try_parse_dates=False)
+        except pl.exceptions.ComputeError as error:
+            if "utf-8" not in str(error).lower() and "utf8" not in str(error).lower(): raise
+            frame=pl.read_csv(io.StringIO(decode_text(path)), separator=sep, infer_schema=False)
+        return [(path.stem, frame)]
+    if ext == ".txt":
+        return [(path.stem, pl.DataFrame({"Номер": decode_text(path).splitlines()}))]
     if ext in {".xlsx",".xlsm"}:
         import openpyxl
         wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
-        rows = []
-        header = None
-        for ws in wb.worksheets:
-            it = ws.iter_rows(values_only=True)
-            try:
-                first = next(it)
-            except StopIteration:
-                continue
-            hdr = [str(x).strip() if x is not None else f"col_{i+1}" for i,x in enumerate(first)]
-            if header is None:
-                header = hdr
-            for row in it:
-                rows.append({hdr[i]: row[i] if i < len(row) else None for i in range(len(hdr))})
-        return pl.DataFrame(rows) if rows else pl.DataFrame({c: [] for c in (header or [])})
+        try:
+            return [(ws.title,_from_rows(ws.iter_rows(values_only=True),search_header)) for ws in
+                    (wb.worksheets[:1] if first_sheet else wb.worksheets)]
+        finally: wb.close()
+    if ext == ".xls":
+        import xlrd
+        wb=xlrd.open_workbook(path)
+        try:
+            return [(ws.name,_from_rows((ws.row_values(i) for i in range(ws.nrows)),search_header))
+                    for ws in (wb.sheets()[:1] if first_sheet else wb.sheets())]
+        finally: wb.release_resources()
+    if ext == ".xlsb":
+        from pyxlsb import open_workbook
+        with open_workbook(str(path)) as wb:
+            tables=[]
+            for name in (wb.sheets[:1] if first_sheet else wb.sheets):
+                with wb.get_sheet(name) as ws:
+                    tables.append((name,_from_rows(([cell.v for cell in row] for row in ws.rows()),search_header)))
+            return tables
+    if ext in {".html",".htm"}:
+        parser=_HTMLTables(); parser.feed(decode_text(path))
+        if not parser.tables: raise ValueError("В HTML нет таблиц")
+        return [(f"Таблица_{i}",_from_rows(rows)) for i,rows in enumerate(parser.tables,1)]
     if ext == ".parquet":
-        return pl.read_parquet(path)
+        return [(path.stem,pl.read_parquet(path))]
     raise ValueError(f"Unsupported format: {ext}")
+
+def read_any(path: Path, search_header=False) -> pl.DataFrame:
+    tables=read_tables(path,search_header=search_header)
+    return pl.concat([frame for _,frame in tables], how="diagonal_relaxed") if tables else pl.DataFrame()
 
 def write_csv(df: pl.DataFrame, out: Path):
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -78,7 +158,8 @@ def normalize_fio_expr(col: str):
 
 def normalize_dates_expr(col: str):
     s = pl.col(col).cast(pl.Utf8, strict=False).fill_null("").str.strip_chars()
-    parsed = s.str.strptime(pl.Date, strict=False)
+    parsed = pl.coalesce([s.str.strptime(pl.Date, format=fmt, strict=False)
+                          for fmt in ("%Y-%m-%d","%d.%m.%Y","%d/%m/%Y","%Y-%m-%d %H:%M:%S")])
     return parsed.dt.strftime("%Y-%m-%d").fill_null(s).alias(col)
 
 def normalize(df: pl.DataFrame) -> pl.DataFrame:

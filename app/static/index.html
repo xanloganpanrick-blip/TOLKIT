@@ -1,101 +1,36 @@
 <!doctype html>
 <html lang="ru">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>DBFLOW — обработка таблиц</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/styles.css?v=20261003-3">
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#100b1b">
+<title>DBFLOW — работа с таблицами</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/styles.css?v=4">
 </head>
 <body>
 <div class="app-shell">
   <aside class="sidebar">
-    <div class="brand"><span class="brand-mark">◆</span><span>DBFLOW</span></div>
-    <div class="side-label">Рабочее пространство</div>
-    <nav class="main-nav">
-      <button class="nav active" data-view="desktop"><span>⌂</span> Рабочий стол</button>
-      <button class="nav" data-view="operations"><span>✦</span> Операции</button>
-      <button class="nav" data-view="jobs"><span>↻</span> История задач</button>
-    </nav>
-    <div class="side-divider"></div>
-    <div class="side-label">Быстрый запуск</div>
-    <div class="side-tools">
-      <button class="tool" data-op="convert_csv"><i>⇄</i> В CSV</button>
-      <button class="tool" data-op="clean"><i>⌁</i> Очистить данные</button>
-      <button class="tool" data-op="normalize"><i>✦</i> Нормализовать</button>
-      <button class="tool" data-op="dedupe"><i>◇</i> Убрать дубли</button>
-      <button class="tool" data-op="remove7"><i>−7</i> Удалить первую 7</button>
-    </div>
-    <div class="sidebar-foot"><span class="status-dot"></span><span>Готово к работе</span></div>
+    <a class="brand" href="#/desktop"><span class="brand-mark">◆</span>DBFLOW</a>
+    <nav aria-label="Основная навигация" id="navigation"></nav>
+    <div class="sidebar-foot"><span class="status-dot"></span> CSV · Excel · Parquet</div>
   </aside>
-
   <main class="workspace">
-    <header class="topbar">
-      <div>
-        <div id="crumb" class="crumb">Рабочий стол</div>
-        <div class="subtle">Миллионы строк — одна среда</div>
-      </div>
-      <div class="top-actions">
-        <label class="upload primary">＋ Загрузить файлы<input id="filePicker" type="file" multiple accept=".csv,.xlsx,.xlsm,.parquet" hidden></label>
-        <button id="refresh" class="icon-btn" title="Обновить">↻</button>
-      </div>
-    </header>
-
+    <header class="topbar"><div><div id="crumb" class="crumb">Рабочий стол</div><div class="subtle">Миллионы строк — одна среда</div></div><div class="top-actions"><button id="addFiles" class="primary">＋ Добавить файлы</button><button id="refresh" class="icon-btn" title="Обновить задачи" aria-label="Обновить задачи">↻</button></div></header>
     <section id="desktopView" class="view">
       <div class="hero">
-        <div class="hero-copy">
-          <span class="eyebrow">DATA WORKSPACE</span>
-          <h1>Данные в порядке.<br><em>Результат — сразу.</em></h1>
-          <p>Загружай таблицы, выбирай действие и получай чистый CSV без лишних шагов.</p>
-          <div class="hero-actions"><button class="primary hero-button" data-scroll-drop>Начать обработку <span>↗</span></button><button class="secondary" data-view-jump="operations">Все операции</button></div>
-        </div>
-        <div class="hero-visual"><div class="visual-glow"></div><div class="visual-grid"></div><div class="visual-card card-one">CSV <b>+24%</b></div><div class="visual-card card-two">ROWS <b>1.8M</b></div><div class="visual-orb"></div></div>
+        <div class="hero-copy"><span class="eyebrow">DBFLOW / WORKSPACE</span><h1>Большие таблицы.<br><em>Простая работа.</em></h1><p>Номера, адреса, сверка и делёжка — всё в одном месте.</p><div class="hero-actions"><a class="primary" href="#/geo">Открыть GEO <span>↗</span></a><a class="secondary" href="#/max_filter">Фильтр + MAX</a></div></div>
+        <div class="hero-visual" aria-hidden="true"><div class="visual-glow"></div><div class="visual-grid"></div><div class="visual-orb"></div><div class="visual-card card-one">CSV <b>→ GEO</b></div><div class="visual-card card-two">TABLES <b>→ RESULT</b></div></div>
       </div>
-
-      <section id="ingestPanel" class="upload-panel">
-        <div class="panel-heading"><div><span class="eyebrow">БЫСТРЫЙ СТАРТ</span><h2>Добавь файлы</h2><p>CSV, XLSX, XLSM и Parquet — можно выбрать несколько.</p></div><span class="format-chip">4 формата</span></div>
-        <div id="dropZone" class="drop-zone"><div class="drop-icon">↥</div><strong>Перетащи файлы сюда</strong><span>или <label class="inline-upload">выбери их на компьютере<input id="dropPicker" type="file" multiple accept=".csv,.xlsx,.xlsm,.parquet" hidden></label></span><small>Можно убрать отдельный файл до запуска.</small></div>
-        <div id="pendingFiles" class="pending-files hidden"></div>
-        <div class="run-row"><select id="quickOperation" class="op-select"><option value="convert_csv">Конвертировать в CSV</option><option value="clean">Очистить данные</option><option value="normalize">Нормализовать</option><option value="dedupe">Убрать дубли</option><option value="remove7">Удалить первую 7</option><option value="stats">Профиль данных</option></select><button id="quickRunBtn" class="primary" disabled>Обработать <span>→</span></button></div>
-        <div id="uploadProgress" class="upload-progress hidden"><div class="progress-label"><span id="uploadStatus">Подготовка…</span><b id="uploadPercent">0%</b></div><div class="progress-track"><i id="uploadBar"></i></div></div>
-      </section>
-
-      <div class="metrics"><div class="metric"><span>Файлы</span><b id="mFiles">0</b><small>выбрано сейчас</small></div><div class="metric"><span>Задачи</span><b id="mJobs">0</b><small>в истории</small></div><div class="metric"><span>Готово</span><b id="mDone">0</b><small>результатов</small></div><div class="metric accent"><span>Форматы</span><b>4</b><small>CSV · XLSX · XLSM · PQ</small></div></div>
-
-      <div class="section-head"><div><span class="eyebrow">ФАЙЛЫ</span><h2>Выбранные файлы</h2></div><button class="text-btn" data-view-jump="operations">Открыть операции →</button></div>
-      <div id="recentFiles" class="pending-preview"></div>
-      <div class="section-head"><div><span class="eyebrow">ПОПУЛЯРНОЕ</span><h2>Частые операции</h2></div></div>
-      <div class="quick-grid"><button class="quick" data-op="convert_csv"><b>⇄</b><strong>В CSV</strong><small>Единый формат для работы</small><span>→</span></button><button class="quick" data-op="clean"><b>⌁</b><strong>Очистить данные</strong><small>Пробелы и пустые значения</small><span>→</span></button><button class="quick" data-op="dedupe"><b>◇</b><strong>Убрать дубли</strong><small>Оставить только уникальные строки</small><span>→</span></button><button class="quick" data-op="stats"><b>▦</b><strong>Профиль данных</strong><small>Строки, колонки и структура</small><span>→</span></button></div>
+      <div class="section-head"><div><span class="eyebrow">ИНСТРУМЕНТЫ</span><h2>Выбери раздел</h2></div><span class="subtle">В каждом — файлы, настройки и результат</span></div>
+      <div id="toolCards" class="operations-grid"></div>
     </section>
-
-    <section id="operationsView" class="view hidden">
-      <div class="page-intro"><span class="eyebrow">ИНСТРУМЕНТЫ</span><h1>Операции для таблиц</h1><p>Выбери действие. Файлы можно добавить сразу внутри любой операции.</p></div>
-      <div class="operations-grid">
-        <button class="operation-card featured" data-op="convert_csv"><span class="op-icon">⇄</span><span class="op-kicker">ФОРМАТ</span><h3>Конвертировать в CSV</h3><p>Привести XLSX, XLSM или Parquet к единому CSV.</p><span class="op-arrow">→</span></button>
-        <button class="operation-card" data-op="clean"><span class="op-icon">⌁</span><span class="op-kicker">КАЧЕСТВО</span><h3>Очистить данные</h3><p>Убрать лишние пробелы и пустые текстовые значения.</p><span class="op-arrow">→</span></button>
-        <button class="operation-card" data-op="normalize"><span class="op-icon">✦</span><span class="op-kicker">ПОРЯДОК</span><h3>Нормализовать</h3><p>Привести телефоны, ФИО и даты к единому виду.</p><span class="op-arrow">→</span></button>
-        <button class="operation-card" data-op="remove7"><span class="op-icon">−7</span><span class="op-kicker">ТЕЛЕФОНЫ</span><h3>Удалить первую 7</h3><p>Убрать начальную 7 в колонке с номером телефона.</p><span class="op-arrow">→</span></button>
-        <button class="operation-card" data-op="dedupe"><span class="op-icon">◇</span><span class="op-kicker">УНИКАЛЬНОСТЬ</span><h3>Убрать дубли</h3><p>Оставить уникальные строки по телефону, email или ИНН.</p><span class="op-arrow">→</span></button>
-        <button class="operation-card" data-op="filter"><span class="op-icon">⌘</span><span class="op-kicker">ПОИСК</span><h3>Фильтр строк</h3><p>Оставить строки по точному значению или совпадению.</p><span class="op-arrow">→</span></button>
-        <button class="operation-card" data-op="sort"><span class="op-icon">↕</span><span class="op-kicker">ПОРЯДОК</span><h3>Сортировка</h3><p>Отсортировать таблицу по выбранной колонке.</p><span class="op-arrow">→</span></button>
-        <button class="operation-card" data-op="merge"><span class="op-icon">⊕</span><span class="op-kicker">СБОРКА</span><h3>Объединить файлы</h3><p>Собрать несколько таблиц с разными колонками в одну.</p><span class="op-arrow">→</span></button>
-        <button class="operation-card" data-op="split"><span class="op-icon">✂</span><span class="op-kicker">РАЗМЕР</span><h3>Разбить таблицу</h3><p>Разделить большой файл на CSV-части внутри ZIP.</p><span class="op-arrow">→</span></button>
-        <button class="operation-card" data-op="stats"><span class="op-icon">▦</span><span class="op-kicker">АНАЛИТИКА</span><h3>Профиль данных</h3><p>Получить количество строк, колонок и список полей.</p><span class="op-arrow">→</span></button>
-      </div>
-    </section>
-
-    <section id="jobsView" class="view hidden">
-      <div class="page-intro jobs-intro"><div><span class="eyebrow">КОНТРОЛЬ</span><h1>История задач</h1><p>Следи за прогрессом и скачивай готовые результаты.</p></div><button class="primary" data-view-jump="operations">Новая задача <span>＋</span></button></div>
-      <section class="upload-panel compact-panel"><div class="panel-heading"><div><span class="eyebrow">НОВАЯ ЗАДАЧА</span><h2>Добавь файлы</h2><p>Выбери операцию для обработки.</p></div></div><div id="jobsDropZone" class="drop-zone compact-drop"><div class="drop-icon">↥</div><strong>Перетащи файлы сюда</strong><span>или <label class="inline-upload">выбери файлы<input id="jobsPicker" type="file" multiple accept=".csv,.xlsx,.xlsm,.parquet" hidden></label></span></div><div id="jobsPendingFiles" class="pending-files hidden"></div><div class="run-row"><select id="jobsOperation" class="op-select"><option value="convert_csv">Конвертировать в CSV</option><option value="clean">Очистить данные</option><option value="normalize">Нормализовать</option><option value="dedupe">Убрать дубли</option><option value="remove7">Удалить первую 7</option><option value="stats">Профиль данных</option></select><button id="jobsRunBtn" class="primary" disabled>Обработать <span>→</span></button></div><div id="jobsUploadProgress" class="upload-progress hidden"><div class="progress-label"><span id="jobsUploadStatus">Подготовка…</span><b id="jobsUploadPercent">0%</b></div><div class="progress-track"><i id="jobsUploadBar"></i></div></div></section>
-      <div id="jobsList" class="jobs-list"></div>
-    </section>
+    <section id="toolView" class="view hidden"></section>
+    <section id="jobsView" class="view hidden"><div class="page-intro"><span class="eyebrow">РЕЗУЛЬТАТЫ</span><h1>История задач</h1><p>Готовые файлы и ход обработки.</p></div><div id="jobsList" class="jobs-list"></div></section>
+    <footer class="workspace-footer">DBFLOW <span>Таблицы → порядок → результат</span></footer>
   </main>
 </div>
-<div id="dragOverlay" class="drag-overlay hidden"><div class="overlay-symbol">↥</div><b>Отпусти файлы</b><span>Они появятся в выбранной операции</span></div>
-<div id="modal" class="modal hidden"><div class="modal-card"><button id="modalClose" class="modal-x">×</button><div id="modalBody"></div></div></div>
-<div id="toast" class="toast"></div>
-<script src="/app.js?v=20261003-3"></script>
-</body>
-</html>
+<input id="globalPicker" type="file" multiple hidden accept=".csv,.xlsx,.xlsm,.xls,.xlsb,.parquet,.txt,.html,.htm">
+<div id="dragOverlay" class="drag-overlay hidden"><div class="overlay-symbol">↥</div><b>Добавить файлы</b><span>Отпусти их в нужном разделе</span></div>
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
+<script src="/app.js?v=4"></script>
+</body></html>
