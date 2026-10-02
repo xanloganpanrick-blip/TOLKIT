@@ -103,6 +103,13 @@ def run_job(job_id: int):
                 df.write_csv(out); _save_output(db,job,job.owner_id,out)
                 job.progress=20+int(i/max(1,len(local_paths))*75); db.commit()
 
+        elif op=="clean":
+            for i,p in enumerate(local_paths,1):
+                df=table_ops.clean(table_ops.read_any(p))
+                out=work/(p.stem+"_clean.csv")
+                df.write_csv(out); _save_output(db,job,job.owner_id,out)
+                job.progress=20+int(i/max(1,len(local_paths))*75); db.commit()
+
         elif op=="remove7":
             for i,p in enumerate(local_paths,1):
                 df=table_ops.remove_leading_7(table_ops.read_any(p))
@@ -115,6 +122,25 @@ def run_job(job_id: int):
             for i,p in enumerate(local_paths,1):
                 df=table_ops.dedupe(table_ops.read_any(p),keys)
                 out=work/(p.stem+"_dedup.csv")
+                df.write_csv(out); _save_output(db,job,job.owner_id,out)
+                job.progress=20+int(i/max(1,len(local_paths))*75); db.commit()
+
+        elif op=="filter":
+            column=opts.get("column","")
+            value=opts.get("value","")
+            contains=bool(opts.get("contains",False))
+            for i,p in enumerate(local_paths,1):
+                df=table_ops.filter_rows(table_ops.read_any(p),column,value,contains)
+                out=work/(p.stem+"_filtered.csv")
+                df.write_csv(out); _save_output(db,job,job.owner_id,out)
+                job.progress=20+int(i/max(1,len(local_paths))*75); db.commit()
+
+        elif op=="sort":
+            column=opts.get("column","")
+            descending=bool(opts.get("descending",False))
+            for i,p in enumerate(local_paths,1):
+                df=table_ops.sort_rows(table_ops.read_any(p),column,descending)
+                out=work/(p.stem+"_sorted.csv")
                 df.write_csv(out); _save_output(db,job,job.owner_id,out)
                 job.progress=20+int(i/max(1,len(local_paths))*75); db.commit()
 

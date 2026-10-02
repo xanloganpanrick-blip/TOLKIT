@@ -19,7 +19,10 @@ Path(settings.work_path).mkdir(parents=True, exist_ok=True)
 app = FastAPI(title="DBFLOW Local", version="2.0.0")
 static_dir = Path(__file__).parent / "static"
 ALLOWED_EXTENSIONS = {".csv", ".xlsx", ".xlsm", ".parquet"}
-ALLOWED_OPERATIONS = {"convert_csv", "normalize", "remove7", "dedupe", "merge", "split", "stats"}
+ALLOWED_OPERATIONS = {
+    "convert_csv", "clean", "normalize", "remove7", "dedupe",
+    "merge", "split", "filter", "sort", "stats",
+}
 SESSION_RE = re.compile(r"^[A-Za-z0-9_-]{8,128}$")
 
 

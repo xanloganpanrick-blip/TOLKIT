@@ -92,6 +92,15 @@ def normalize(df: pl.DataFrame) -> pl.DataFrame:
     if date: exprs.append(normalize_dates_expr(date))
     return df.with_columns(exprs) if exprs else df
 
+def clean(df: pl.DataFrame) -> pl.DataFrame:
+    """Trim text fields and remove empty text values without changing numeric types."""
+    exprs = []
+    for name, dtype in df.schema.items():
+        if dtype == pl.String:
+            value = pl.col(name).str.replace_all(r"\s+", " ").str.strip_chars()
+            exprs.append(pl.when(value == "").then(None).otherwise(value).alias(name))
+    return df.with_columns(exprs) if exprs else df
+
 def remove_leading_7(df: pl.DataFrame) -> pl.DataFrame:
     phone = _find_col(df.columns, PHONE_ALIASES)
     if not phone:
@@ -105,6 +114,21 @@ def dedupe(df: pl.DataFrame, keys: list[str] | None = None) -> pl.DataFrame:
     else:
         existing = [c for c in [_find_col(df.columns, PHONE_ALIASES), _find_col(df.columns, {"email","e-mail","почта"}), _find_col(df.columns, {"инн","inn"})] if c]
     return df.unique(subset=existing or None, keep="first", maintain_order=False)
+
+def sort_rows(df: pl.DataFrame, column: str, descending: bool = False) -> pl.DataFrame:
+    if not column or column not in df.columns:
+        raise ValueError("Укажи колонку для сортировки")
+    return df.sort(column, descending=descending, nulls_last=True)
+
+def filter_rows(df: pl.DataFrame, column: str, value: str, contains: bool = False) -> pl.DataFrame:
+    if not column or column not in df.columns:
+        raise ValueError("Укажи колонку для фильтра")
+    if value is None or str(value) == "":
+        raise ValueError("Укажи значение для фильтра")
+    needle = str(value)
+    text = pl.col(column).cast(pl.String, strict=False).fill_null("")
+    condition = text.str.contains(needle, literal=True) if contains else text == needle
+    return df.filter(condition)
 
 def merge(paths: list[Path]) -> pl.DataFrame:
     frames = []
