@@ -165,7 +165,7 @@ def geo(df, options):
     return df
 
 def write_table(df,path,options):
-    path=path.with_suffix(".xlsx" if options.get("output_format")=="xlsx" else ".csv")
+    path=path.parent/(path.name+(".xlsx" if options.get("output_format")=="xlsx" else ".csv"))
     path.parent.mkdir(parents=True,exist_ok=True)
     if path.suffix==".xlsx":
         if df.height>1_048_575 or df.width>16_384: raise ValueError("Таблица превышает лимит Excel. Выбери CSV.")
@@ -339,7 +339,7 @@ def run_operation(operation,paths,refs,options,work,progress):
                 finally: wb.close()
                 progress(20+int(i/len(paths)*75));continue
             frame=t.read_tables(path,first_sheet=True)[0][1] if operation in {"distribute","row_names"} else t.read_any(path,search_header=operation in {"fssp","remove7"})
-            if operation=="convert_csv": outputs.append(write_table(frame,work/(name+".csv"),{**options,"output_format":"csv"}))
+            if operation=="convert_csv": outputs.append(write_table(frame,work/name,{**options,"output_format":"csv"}))
             elif operation=="clean":save(t.clean(frame),name+"_clean")
             elif operation=="normalize":save(t.normalize(frame),name+"_normalized")
             elif operation=="remove7":

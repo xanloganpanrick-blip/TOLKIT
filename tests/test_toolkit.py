@@ -126,6 +126,13 @@ class ToolkitTests(unittest.TestCase):
         self.assertEqual(loaded["Второй"]["A1"].value,"Номер телефона");loaded.close()
         self.assertEqual(t.read_any(path,search_header=True).height,2)
 
+    def test_output_names_preserve_dots_and_do_not_overwrite(self):
+        first=self.root/"data.2025.csv";second=self.root/"data.2025.txt"
+        first.write_bytes(self.source.read_bytes());second.write_text("79161234567",encoding="utf8")
+        out=self.root/"names";out.mkdir()
+        results=ops.run_operation("convert_csv",[first,second],[],{},out,lambda v:None)
+        self.assertEqual([path.name for path in results[:2]],["1_data.2025.csv","2_data.2025.csv"])
+
     def test_api_reference_upload_and_download(self):
         os.environ["DATABASE_URL"]="sqlite:///"+str(self.root/"api.db").replace("\\","/")
         os.environ["WORK_PATH"]=str(self.root/"work")
@@ -153,11 +160,17 @@ class ToolkitTests(unittest.TestCase):
             other=client.get(f'/api/files/{result["id"]}/download',headers={"X-Session-ID":"other-session-002"})
             self.assertEqual(other.status_code,404)
             from app.config import settings
-            from app.jobs import cleanup_quick_job
+            from app.jobs import restore_cleanup
+            from app.db import SessionLocal
+            from app.models import Job
+            from datetime import datetime, timedelta
             folder=Path(settings.work_path)/f"job_{jid}"
             (folder/result["name"]).unlink()
             self.assertEqual(client.get(f'/api/files/{result["id"]}/download',headers=headers).status_code,404)
-            cleanup_quick_job(jid,folder)
+            with SessionLocal() as db:
+                db.get(Job,jid).finished_at=datetime.utcnow()-timedelta(seconds=settings.quick_job_ttl_seconds+1)
+                db.commit()
+            restore_cleanup()
             expired=client.get(f"/api/jobs/{jid}",headers=headers).json()
             self.assertTrue(all(output["expired"] for output in expired["outputs"]))
             self.assertFalse(folder.exists())
