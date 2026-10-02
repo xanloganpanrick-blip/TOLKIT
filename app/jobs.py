@@ -43,9 +43,14 @@ def enqueue(job_id: int):
 
 def cleanup_quick_job(job_id: int, work: Path):
     db = SessionLocal()
+    session_dir = None
     try:
         job = db.get(Job, job_id)
         if job:
+            options = json.loads(job.options_json or "{}")
+            session_id = options.get("quick_session")
+            if session_id:
+                session_dir = Path(settings.work_path) / f"quick_{session_id}"
             ids = json.loads(job.input_file_ids or "[]") + json.loads(job.output_file_ids or "[]")
             for fid in set(ids):
                 rec = db.get(StoredFile, fid)
@@ -56,6 +61,8 @@ def cleanup_quick_job(job_id: int, work: Path):
     finally:
         db.close()
         shutil.rmtree(work, ignore_errors=True)
+        if session_dir:
+            shutil.rmtree(session_dir, ignore_errors=True)
 
 def run_job(job_id: int):
     db = SessionLocal()
