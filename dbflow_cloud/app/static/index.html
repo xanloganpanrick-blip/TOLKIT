@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>DBFLOW — Database Workspace</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+<div id="auth" class="auth-shell">
+  <div class="auth-bg"></div>
+  <div class="auth-card glass">
+    <div class="logo"><span class="logo-mark">◆</span> DBFLOW</div>
+    <h1>Рабочее пространство для больших таблиц</h1>
+    <p>Файлы, история задач и результаты синхронизируются с аккаунтом.</p>
+    <div class="tabs"><button class="active" data-auth="login">Вход</button><button data-auth="register">Регистрация</button></div>
+    <input id="username" placeholder="Логин" autocomplete="username">
+    <input id="password" type="password" placeholder="Пароль" autocomplete="current-password">
+    <button id="authBtn" class="primary">Войти</button>
+    <div id="authMsg" class="msg"></div>
+  </div>
+</div>
+
+<div id="app" class="app hidden">
+  <aside class="sidebar glass">
+    <div class="brand"><span class="logo-mark">◆</span><b>DBFLOW</b></div>
+    <button class="nav active" data-view="desktop"><span>⌂</span> Рабочий стол</button>
+    <button class="nav" data-view="files"><span>▦</span> Хранилище</button>
+    <button class="nav" data-view="jobs"><span>↻</span> История задач</button>
+    <div class="side-sep"></div>
+    <div class="side-title">Инструменты</div>
+    <button class="tool" data-op="convert_csv">⇄ Конвертация → CSV</button>
+    <button class="tool" data-op="normalize">✦ Нормализация</button>
+    <button class="tool" data-op="dedupe">◇ Дедупликация</button>
+    <button class="tool" data-op="merge">⊕ Объединить</button>
+    <button class="tool" data-op="split">✂ Разбить</button>
+    <button class="tool" data-op="remove7">−7 Убрать первую 7</button>
+    <button class="tool" data-op="stats">≋ Анализ структуры</button>
+    <div class="sidebar-bottom">
+      <div id="userBadge" class="user-badge"></div>
+      <button id="logout" class="ghost">Выйти</button>
+    </div>
+  </aside>
+
+  <main class="workspace">
+    <header class="topbar glass">
+      <div>
+        <div id="crumb" class="crumb">Рабочий стол</div>
+        <div class="subtle">облачное рабочее пространство</div>
+      </div>
+      <div class="top-actions">
+        <label class="upload primary">＋ Загрузить<input id="filePicker" type="file" multiple hidden></label>
+        <button id="refresh" class="icon-btn" title="Обновить">↻</button>
+      </div>
+    </header>
+
+    <section id="desktopView" class="view">
+      <div class="hero">
+        <div>
+          <span class="pill">FAST DATA WORKSPACE</span>
+          <h2>Базы без хаоса.<br><em>Миллионы строк — одна рабочая среда.</em></h2>
+          <p>Загружай, обрабатывай и забирай результаты. Исходники, история, прогресс и результаты остаются привязаны к аккаунту.</p>
+        </div>
+        <div class="hero-orb"></div>
+      </div>
+      <div class="metrics">
+        <div class="metric glass"><span>Файлов</span><b id="mFiles">0</b></div>
+        <div class="metric glass"><span>Задач</span><b id="mJobs">0</b></div>
+        <div class="metric glass"><span>Готово</span><b id="mDone">0</b></div>
+        <div class="metric glass"><span>Хранилище</span><b id="mSize">0 B</b></div>
+      </div>
+      <div class="section-head"><h3>Последние файлы</h3><button class="text-btn" data-view="files">Показать все →</button></div>
+      <div id="recentFiles" class="file-grid"></div>
+      <div class="section-head"><h3>Быстрые действия</h3></div>
+      <div class="quick-grid">
+        <button class="quick" data-op="convert_csv"><b>⇄</b><span>В CSV</span><small>универсальный экспорт</small></button>
+        <button class="quick" data-op="normalize"><b>✦</b><span>Нормализовать</span><small>телефон · ФИО · даты</small></button>
+        <button class="quick" data-op="merge"><b>⊕</b><span>Объединить</span><small>много таблиц → одна</small></button>
+        <button class="quick" data-op="dedupe"><b>◇</b><span>Убрать дубли</span><small>по ключевым колонкам</small></button>
+      </div>
+    </section>
+
+    <section id="filesView" class="view hidden">
+      <div class="section-head"><div><h2>Хранилище</h2><p>Все исходники и результаты аккаунта.</p></div><input id="fileSearch" class="search" placeholder="Поиск файлов…"></div>
+      <div id="filesGrid" class="file-grid"></div>
+    </section>
+
+    <section id="jobsView" class="view hidden">
+      <div class="section-head"><div><h2>История задач</h2><p>Каждая обработка сохраняется со статусом, входами и результатами.</p></div></div>
+      <div id="jobsList" class="jobs-list"></div>
+    </section>
+  </main>
+</div>
+
+<div id="modal" class="modal hidden">
+  <div class="modal-card glass">
+    <button id="modalClose" class="modal-x">×</button>
+    <div id="modalBody"></div>
+  </div>
+</div>
+
+<div id="toast" class="toast"></div>
+<script src="/app.js"></script>
+</body></html>
