@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>DBFLOW — Local Data Workspace</title>
+<title>DBFLOW — Data Workspace</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/styles.css">
@@ -10,10 +10,10 @@
 <body>
 <div id="app" class="app">
   <aside class="sidebar glass">
-    <div class="brand"><span class="logo-mark">◆</span><b>DBFLOW</b><small>LOCAL MODE</small></div>
+    <div class="brand"><span class="logo-mark">◆</span><b>DBFLOW</b></div>
     <button class="nav active" data-view="desktop"><span>⌂</span> Рабочий стол</button>
     <button class="nav" data-view="jobs"><span>↻</span> История задач</button>
-    <div class="side-sep"></div><div class="side-title">Перетащи в операцию</div>
+    <div class="side-sep"></div><div class="side-title">Инструменты</div>
     <button class="tool" data-op="convert_csv">⇄ Конвертация → CSV</button>
     <button class="tool" data-op="normalize">✦ Нормализация</button>
     <button class="tool" data-op="dedupe">◇ Дедупликация</button>
@@ -21,38 +21,37 @@
     <button class="tool" data-op="split">✂ Разбить</button>
     <button class="tool" data-op="remove7">−7 Убрать первую 7</button>
     <button class="tool" data-op="stats">≋ Анализ структуры</button>
-    <div class="sidebar-bottom"><div class="local-badge">● Файлы не сохраняются<br><span>только текущая сессия</span></div></div>
   </aside>
 
   <main class="workspace">
     <header class="topbar glass">
-      <div><div id="crumb" class="crumb">Рабочий стол</div><div class="subtle">локальная временная сессия · без регистрации и облака</div></div>
-      <div class="top-actions"><label class="upload primary">＋ Выбрать файлы<input id="filePicker" type="file" multiple accept=".csv,.xlsx,.xlsm,.parquet" hidden></label><button id="refresh" class="icon-btn" title="Обновить">↻</button></div>
+      <div><div id="crumb" class="crumb">Рабочий стол</div><div class="subtle">Миллионы строк — одна среда</div></div>
+      <div class="top-actions"><label class="upload primary">＋ Загрузить файлы<input id="filePicker" type="file" multiple accept=".csv,.xlsx,.xlsm,.parquet" hidden></label><button id="refresh" class="icon-btn" title="Обновить">↻</button></div>
     </header>
 
     <section id="desktopView" class="view">
-      <div class="hero"><div><span class="pill">PRIVATE LOCAL WORKSPACE</span><h2>Обрабатывай файлы.<br><em>Ничего не сохраняй.</em></h2><p>Перетащи CSV, XLSX, XLSM или Parquet в любую секцию и сразу запусти операцию. Исходники и результаты живут только во временной сессии и удаляются автоматически.</p></div><div class="hero-orb"></div></div>
+      <div class="hero"><div><span class="pill">DATA WORKSPACE</span><h2>Миллионы строк.<br><em>Одна рабочая среда.</em></h2><p>Загружай таблицы, запускай операции и скачивай готовый результат.</p></div><div class="hero-orb"></div></div>
       <section id="ingestPanel" class="ingest-panel glass">
-        <div class="ingest-head"><div><h3>Быстрая обработка</h3><p>Выбери файлы, операцию и запусти без хранилища.</p></div><span class="format-note">CSV · XLSX · XLSM · Parquet</span></div>
-        <div id="dropZone" class="drop-zone"><div class="drop-icon">⇩</div><strong>Перетащи файлы сюда</strong><span>или <label class="inline-upload">выбери их на компьютере<input id="dropPicker" type="file" multiple accept=".csv,.xlsx,.xlsm,.parquet" hidden></label></span><small>Можно удалить отдельный файл до запуска.</small></div>
+        <div class="ingest-head"><div><h3>Быстрая обработка</h3><p>Выбери файлы и нужную операцию.</p></div><span class="format-note">CSV · XLSX · XLSM · Parquet</span></div>
+        <div id="dropZone" class="drop-zone"><div class="drop-icon">⇩</div><strong>Перетащи файлы сюда</strong><span>или <label class="inline-upload">выбери их на компьютере<input id="dropPicker" type="file" multiple accept=".csv,.xlsx,.xlsm,.parquet" hidden></label></span><small>Поддерживаются CSV, XLSX, XLSM и Parquet.</small></div>
         <div id="pendingFiles" class="pending-files hidden"></div>
         <div class="ingest-actions"><select id="quickOperation" class="op-select"><option value="convert_csv">Конвертация в CSV</option><option value="normalize">Нормализация</option><option value="dedupe">Дедупликация</option><option value="merge">Объединить</option><option value="split">Разбить</option><option value="remove7">Убрать первую 7</option><option value="stats">Анализ структуры</option></select><button id="quickRunBtn" class="primary" disabled>⚡ Обработать</button></div>
         <div id="uploadProgress" class="upload-progress hidden"><div class="progress-label"><span id="uploadStatus">Загрузка…</span><b id="uploadPercent">0%</b></div><div class="job-bar"><i id="uploadBar" style="width:0%"></i></div></div>
       </section>
-      <div class="metrics"><div class="metric glass"><span>Выбрано файлов</span><b id="mFiles">0</b></div><div class="metric glass"><span>Задач в сессии</span><b id="mJobs">0</b></div><div class="metric glass"><span>Готово</span><b id="mDone">0</b></div><div class="metric glass"><span>Режим</span><b class="local-metric">LOCAL</b></div></div>
+      <div class="metrics"><div class="metric glass"><span>Файлы</span><b id="mFiles">0</b></div><div class="metric glass"><span>Задачи</span><b id="mJobs">0</b></div><div class="metric glass"><span>Готово</span><b id="mDone">0</b></div><div class="metric glass"><span>Форматы</span><b>4</b></div></div>
       <div class="section-head"><h3>Выбранные файлы</h3></div><div id="recentFiles" class="pending-preview"></div>
-      <div class="section-head"><h3>Операции — сюда тоже можно перетаскивать</h3></div>
+      <div class="section-head"><h3>Операции</h3></div>
       <div class="quick-grid"><button class="quick" data-op="convert_csv"><b>⇄</b><span>В CSV</span><small>универсальный экспорт</small></button><button class="quick" data-op="normalize"><b>✦</b><span>Нормализовать</span><small>телефон · ФИО · даты</small></button><button class="quick" data-op="merge"><b>⊕</b><span>Объединить</span><small>много таблиц → одна</small></button><button class="quick" data-op="dedupe"><b>◇</b><span>Убрать дубли</span><small>по ключевым колонкам</small></button></div>
     </section>
 
     <section id="jobsView" class="view hidden">
-      <div class="section-head"><div><h2>История задач</h2><p>История только этой временной сессии. Исходники не сохраняются.</p></div></div>
-      <section class="section-intake glass"><div class="ingest-head"><div><h3>Перетащи файлы прямо сюда</h3><p>Выбери операцию и обработай без перехода на рабочий стол.</p></div></div><div id="jobsDropZone" class="drop-zone compact-drop"><div class="drop-icon">⇩</div><strong>Drop-зона истории</strong><span>или <label class="inline-upload">выбери файлы<input id="jobsPicker" type="file" multiple accept=".csv,.xlsx,.xlsm,.parquet" hidden></label></span></div><div id="jobsPendingFiles" class="pending-files hidden"></div><div class="ingest-actions"><select id="jobsOperation" class="op-select"><option value="convert_csv">Конвертация в CSV</option><option value="normalize">Нормализация</option><option value="dedupe">Дедупликация</option><option value="merge">Объединить</option><option value="split">Разбить</option><option value="remove7">Убрать первую 7</option><option value="stats">Анализ структуры</option></select><button id="jobsRunBtn" class="primary" disabled>⚡ Запустить</button></div><div id="jobsUploadProgress" class="upload-progress hidden"><div class="progress-label"><span id="jobsUploadStatus">Загрузка…</span><b id="jobsUploadPercent">0%</b></div><div class="job-bar"><i id="jobsUploadBar" style="width:0%"></i></div></div></section>
+      <div class="section-head"><div><h2>История задач</h2><p>Статус, прогресс и готовые результаты.</p></div></div>
+      <section class="section-intake glass"><div class="ingest-head"><div><h3>Добавить файлы</h3><p>Выбери операцию для обработки.</p></div></div><div id="jobsDropZone" class="drop-zone compact-drop"><div class="drop-icon">⇩</div><strong>Перетащи файлы сюда</strong><span>или <label class="inline-upload">выбери файлы<input id="jobsPicker" type="file" multiple accept=".csv,.xlsx,.xlsm,.parquet" hidden></label></span></div><div id="jobsPendingFiles" class="pending-files hidden"></div><div class="ingest-actions"><select id="jobsOperation" class="op-select"><option value="convert_csv">Конвертация в CSV</option><option value="normalize">Нормализация</option><option value="dedupe">Дедупликация</option><option value="merge">Объединить</option><option value="split">Разбить</option><option value="remove7">Убрать первую 7</option><option value="stats">Анализ структуры</option></select><button id="jobsRunBtn" class="primary" disabled>⚡ Обработать</button></div><div id="jobsUploadProgress" class="upload-progress hidden"><div class="progress-label"><span id="jobsUploadStatus">Загрузка…</span><b id="jobsUploadPercent">0%</b></div><div class="job-bar"><i id="jobsUploadBar" style="width:0%"></i></div></div></section>
       <div id="jobsList" class="jobs-list"></div>
     </section>
   </main>
 </div>
-<div id="dragOverlay" class="drag-overlay hidden"><div><b>Отпусти файлы</b><span>Они попадут во временную сессию</span></div></div>
+<div id="dragOverlay" class="drag-overlay hidden"><div><b>Отпусти файлы</b><span>Файлы будут добавлены в выбранную операцию</span></div></div>
 <div id="modal" class="modal hidden"><div class="modal-card glass"><button id="modalClose" class="modal-x">×</button><div id="modalBody"></div></div></div>
-<div id="toast" class="toast"></div><script src="/app.js"></script>
+<div id="toast" class="toast"></div><script src="/app.js?v=20261003-2"></script>
 </body></html>
