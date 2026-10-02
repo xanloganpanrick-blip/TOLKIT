@@ -32,14 +32,20 @@ class Storage:
 
     def open_local_copy(self, key: str, dst: Path) -> Path:
         dst.parent.mkdir(parents=True, exist_ok=True)
-        if self.backend == "s3":
+        if key.startswith("__temp__/"):
+            shutil.copy2(Path(settings.work_path) / key[len("__temp__/"):], dst)
+        elif self.backend == "s3":
             self.s3.download_file(settings.s3_bucket, key, str(dst))
         else:
             shutil.copy2(self.local / key, dst)
         return dst
 
     def delete(self, key: str):
-        if self.backend == "s3":
+        if key.startswith("__temp__/"):
+            p = Path(settings.work_path) / key[len("__temp__/"):]
+            if p.exists():
+                p.unlink()
+        elif self.backend == "s3":
             self.s3.delete_object(Bucket=settings.s3_bucket, Key=key)
         else:
             p = self.local / key
@@ -47,6 +53,8 @@ class Storage:
                 p.unlink()
 
     def local_path(self, key: str) -> Path | None:
+        if key.startswith("__temp__/"):
+            return Path(settings.work_path) / key[len("__temp__/"):]
         if self.backend == "local":
             return self.local / key
         return None

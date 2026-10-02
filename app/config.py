@@ -8,6 +8,7 @@ class Settings(BaseSettings):
     local_storage_path: str = "/data/storage"
     work_path: str = "/data/work"
     max_upload_bytes: int = 20 * 1024**3
+    quick_job_ttl_seconds: int = 60 * 60
     access_token_minutes: int = 60 * 24 * 7
     s3_endpoint_url: str | None = None
     s3_region: str | None = None

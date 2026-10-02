@@ -20,11 +20,20 @@ def _sha256(path: Path) -> str:
     return h.hexdigest()
 
 def _save_output(db: Session, job: Job, owner_id: int, path: Path, kind="result") -> StoredFile:
-    key = storage.new_key(owner_id, path.name)
     size = path.stat().st_size
     sha = _sha256(path)
-    storage.put_path(path, key)
-    rec = StoredFile(owner_id=owner_id, name=Path(key).name.split("_",1)[-1], storage_key=key, size=size, kind=kind, sha256=sha)
+    options = json.loads(job.options_json or "{}")
+    if options.get("mode") == "quick":
+        relative = path.relative_to(settings.work_path).as_posix()
+        key = f"__temp__/{relative}"
+        stored_kind = "temporary"
+        name = path.name
+    else:
+        key = storage.new_key(owner_id, path.name)
+        storage.put_path(path, key)
+        stored_kind = kind
+        name = Path(key).name.split("_",1)[-1]
+    rec = StoredFile(owner_id=owner_id, name=name, storage_key=key, size=size, kind=stored_kind, sha256=sha)
     db.add(rec); db.flush()
     ids = json.loads(job.output_file_ids or "[]"); ids.append(rec.id); job.output_file_ids = json.dumps(ids)
     return rec
@@ -32,13 +41,31 @@ def _save_output(db: Session, job: Job, owner_id: int, path: Path, kind="result"
 def enqueue(job_id: int):
     threading.Thread(target=run_job, args=(job_id,), daemon=True).start()
 
+def cleanup_quick_job(job_id: int, work: Path):
+    db = SessionLocal()
+    try:
+        job = db.get(Job, job_id)
+        if job:
+            ids = json.loads(job.input_file_ids or "[]") + json.loads(job.output_file_ids or "[]")
+            for fid in set(ids):
+                rec = db.get(StoredFile, fid)
+                if rec and rec.kind == "temporary" and not rec.deleted:
+                    storage.delete(rec.storage_key)
+                    rec.deleted = True
+            db.commit()
+    finally:
+        db.close()
+        shutil.rmtree(work, ignore_errors=True)
+
 def run_job(job_id: int):
     db = SessionLocal()
     work = Path(settings.work_path) / f"job_{job_id}"
     shutil.rmtree(work, ignore_errors=True); work.mkdir(parents=True, exist_ok=True)
+    job_options = {}
     try:
         job = db.get(Job, job_id)
         if not job: return
+        job_options = json.loads(job.options_json or "{}")
         job.status="running"; job.started_at=datetime.utcnow(); job.progress=2; _log(job,"started"); db.commit()
         input_ids = json.loads(job.input_file_ids or "[]")
         local_paths=[]
@@ -51,7 +78,7 @@ def run_job(job_id: int):
             local_paths.append(local)
             job.progress=min(20, 2+int(idx/max(1,len(input_ids))*18)); db.commit()
 
-        opts=json.loads(job.options_json or "{}")
+        opts=job_options
         op=job.operation
 
         if op=="convert_csv":
@@ -119,5 +146,10 @@ def run_job(job_id: int):
         except Exception:
             pass
     finally:
-        shutil.rmtree(work, ignore_errors=True)
+        if job_options.get("mode") == "quick":
+            timer = threading.Timer(settings.quick_job_ttl_seconds, cleanup_quick_job, args=(job_id, work))
+            timer.daemon = True
+            timer.start()
+        else:
+            shutil.rmtree(work, ignore_errors=True)
         db.close()
